@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#161010">
+<title>Tapple Online</title>
+<link rel="icon" href="data:,">
+<style>
+/* Paleta do Tapple de mesa: base vermelha, teclas creme com letra azul-marinho,
+   botão amarelo no centro. O resto da tela é escuro pra roleta mandar. */
+:root {
+  --bg: #161010;
+  --text: #F4EEDF;
+  --muted: #B9AFA0;
+  --red: #D42A2A;
+  --red-dark: #8F1818;
+  --red-deep: #5E0E0E;
+  --yellow: #F8C81C;
+  --yellow-dark: #D89F00;
+  --key: #F4EEDF;
+  --key-down: #B7B0A0;
+  --navy: #1B2B4B;
+  --navy-muted: #6E7686;
+  --ok: #3CB371;
+  --sans: "Arial Rounded MT Bold", "Helvetica Neue", Arial, sans-serif;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans);
+  overscroll-behavior: none; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+}
+.screen { display: none; min-height: 100%; flex-direction: column; align-items: center; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
+.screen.active { display: flex; }
+
+/* Marca: pílula amarela com "TAPPLE" em azul, como o botão central do jogo */
+.marca {
+  display: inline-block; background: var(--yellow); color: var(--navy); font-weight: 900;
+  letter-spacing: .08em; padding: 10px 26px; border-radius: 999px; font-size: 30px;
+  box-shadow: 0 4px 0 var(--yellow-dark), 0 10px 24px rgba(0,0,0,.5);
+}
+.sub { color: var(--muted); margin: 14px 0 26px; font-size: 15px; text-align: center; line-height: 1.4; }
+
+/* Lobby: a base vermelha aparece como disco atrás da marca */
+#lobby { justify-content: center; gap: 0; }
+.disco {
+  width: min(78vw, 300px); aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center;
+  background: radial-gradient(circle at 35% 30%, #F05A4A 0%, var(--red) 45%, var(--red-dark) 100%);
+  box-shadow: inset 0 -12px 24px rgba(0,0,0,.35), 0 18px 40px rgba(0,0,0,.6);
+  margin-bottom: 22px;
+}
+.acoes { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 12px; }
+button {
+  font-family: var(--sans); font-weight: 800; font-size: 18px; border: 0; border-radius: 14px;
+  padding: 16px 20px; cursor: pointer; width: 100%; color: var(--navy); background: var(--yellow);
+  box-shadow: 0 4px 0 var(--yellow-dark); transition: transform .06s;
+}
+button:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--yellow-dark); }
+button.creme { background: var(--key); box-shadow: 0 4px 0 #B7B0A0; }
+button.creme:active { box-shadow: 0 1px 0 #B7B0A0; }
+button:disabled { opacity: .5; box-shadow: none; transform: none; }
+.linha { display: flex; gap: 10px; }
+input {
+  flex: 1; min-width: 0; font-family: var(--sans); font-size: 22px; letter-spacing: .3em; text-align: center;
+  text-transform: uppercase; border: 3px solid #3A2C2C; border-radius: 14px; background: #221818; color: var(--text); padding: 12px;
+}
+input:focus { outline: none; border-color: var(--yellow); }
+.linha button { width: auto; padding-inline: 22px; }
+
+/* Espera */
+.codigo { font-size: 56px; letter-spacing: .25em; color: var(--yellow); margin: 8px 0 4px; }
+.dica { color: var(--muted); font-size: 14px; text-align: center; line-height: 1.45; max-width: 320px; }
+
+/* Jogo */
+#game { justify-content: space-between; gap: 10px; }
+.placar { width: 100%; max-width: 420px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+.lado { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.lado .quem { font-size: 12px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
+.lado .pts { font-size: 34px; font-weight: 900; line-height: 1; }
+.lado.na-vez .quem { color: var(--yellow); }
+.rodada { color: var(--muted); font-size: 13px; text-align: center; }
+.rodada b { display: block; color: var(--text); font-size: 15px; }
+
+.roleta-wrap { position: relative; width: min(100vw - 24px, 62vh, 460px); aspect-ratio: 1; }
+.roleta-wrap svg { width: 100%; height: 100%; display: block; }
+/* Só quem está na vez toca. Os outros estados apagam a roleta sem tirá-la da tela. */
+.roleta-wrap:not(.minha-vez) .teclas { pointer-events: none; }
+.roleta-wrap:not(.minha-vez) .tecla:not(.usada) rect { opacity: .78; }
+.tecla { cursor: pointer; }
+.tecla rect { fill: var(--key); filter: url(#sombra); transition: fill .12s; }
+.tecla text { fill: var(--navy); font-weight: 900; font-size: 22px; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.tecla.usada rect { fill: var(--key-down); filter: none; }
+.tecla.usada text { fill: var(--navy-muted); }
+.tecla.ultima rect { stroke: var(--yellow); stroke-width: 3; }
+.roleta-wrap.minha-vez .tecla:not(.usada):active rect { fill: var(--key-down); filter: none; }
+
+/* Centro: botão amarelo com a carta da categoria por cima */
+.hub {
+  position: absolute; left: 50%; top: 50%; width: 44%; aspect-ratio: 1; transform: translate(-50%, -50%);
+  border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 8%; color: var(--navy); pointer-events: none;
+}
+.hub .cat { font-size: clamp(13px, 4.2vw, 19px); font-weight: 900; line-height: 1.15; text-transform: uppercase; letter-spacing: .02em; }
+.hub .seg { font-size: clamp(34px, 12vw, 54px); font-weight: 900; line-height: 1; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.hub .seg.urgente { color: var(--red-deep); animation: pulsa .5s infinite alternate; }
+@keyframes pulsa { from { transform: scale(1); } to { transform: scale(1.12); } }
+.hub .parado { font-size: 11px; color: var(--red-deep); letter-spacing: .08em; text-transform: uppercase; margin-top: 2px; }
+
+.msg { min-height: 48px; font-size: 17px; text-align: center; line-height: 1.35; max-width: 340px; }
+.msg.vez { color: var(--yellow); font-weight: 900; font-size: 19px; }
+.rodape { color: var(--muted); font-size: 13px; display: flex; gap: 14px; align-items: center; }
+.rodape a { color: var(--muted); }
+.aviso { width: 100%; max-width: 420px; background: var(--red-deep); color: var(--text); border-radius: 12px; padding: 10px 14px; font-size: 14px; text-align: center; display: none; }
+.aviso.show { display: block; }
+
+/* Carta de fim de rodada, amarela como a carta de categoria do Tapple */
+.overlay {
+  position: fixed; inset: 0; background: rgba(10,6,6,.78); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 10;
+}
+.overlay.show { display: flex; }
+.carta {
+  background: var(--yellow); color: var(--navy); border-radius: 22px; padding: 26px 22px; width: 100%; max-width: 340px; text-align: center;
+  box-shadow: 0 8px 0 var(--yellow-dark), 0 24px 48px rgba(0,0,0,.6);
+}
+.carta .t { font-size: 26px; font-weight: 900; line-height: 1.15; }
+.carta .s { margin: 10px 0 20px; font-size: 16px; line-height: 1.4; }
+.carta button { background: var(--navy); color: var(--yellow); box-shadow: 0 4px 0 #0E1730; }
+.carta button:active { box-shadow: 0 1px 0 #0E1730; }
+
+#toast {
+  position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(20px); background: var(--key); color: var(--navy);
+  padding: 10px 18px; border-radius: 999px; font-size: 14px; font-weight: 800; opacity: 0; transition: .2s; pointer-events: none; z-index: 20; white-space: nowrap;
+}
+#toast.show { opacity: 1; transform: translateX(-50%); }
+</style>
+</head>
+<body>
+
+<div id="lobby" class="screen active">
+  <div class="disco"><div class="marca">TAPPLE</div></div>
+  <div class="sub">Online · 2 jogadores<br>Fale a palavra, toque a letra, 10 segundos.</div>
+  <div class="acoes">
+    <button onclick="createRoom()">Criar sala</button>
+    <div class="linha">
+      <input id="codeInput" maxlength="4" placeholder="CÓDIGO" autocomplete="off" autocapitalize="characters">
+      <button class="creme" onclick="joinRoom()">Entrar</button>
+    </div>
+  </div>
+</div>
+
+<div id="waiting" class="screen" style="justify-content:center">
+  <div class="marca">TAPPLE</div>
+  <div class="sub">Sala aberta. Mande o link pro outro jogador.</div>
+  <div class="codigo" id="roomCodeDisplay">----</div>
+  <div class="acoes" style="margin-top:18px">
+    <button onclick="shareCode()">Convidar</button>
+    <button class="creme" onclick="sair()">Cancelar</button>
+  </div>
+  <p class="dica" style="margin-top:22px">Joguem lado a lado ou numa chamada de voz: a palavra é falada, só a letra é tocada.</p>
+</div>
+
+<div id="game" class="screen">
+  <div class="placar">
+    <div class="lado" id="ladoEu"><span class="quem">Você</span><span class="pts" id="ptsEu">0</span></div>
+    <div class="rodada">Rodada <b id="rodadaN">1</b></div>
+    <div class="lado" id="ladoEle"><span class="quem">Adversário</span><span class="pts" id="ptsEle">0</span></div>
+  </div>
+  <div class="aviso" id="aviso">Adversário caiu. Relógio parado até ele voltar.</div>
+
+  <div class="roleta-wrap" id="roleta">
+    <svg viewBox="0 0 400 400" id="svg" aria-label="Roleta de letras"></svg>
+    <div class="hub">
+      <div class="cat" id="cat">…</div>
+      <div class="seg" id="seg">10</div>
+      <div class="parado" id="parado" hidden>relógio parado</div>
+    </div>
+  </div>
+
+  <div class="msg" id="msg"></div>
+  <div class="rodape"><span>Sala <b id="salaAtual"></b></span><a href="#" onclick="sair();return false">Sair</a></div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="carta">
+    <div class="t" id="cartaT"></div>
+    <div class="s" id="cartaS"></div>
+    <button id="cartaBtn" onclick="cartaAcao()">Próxima rodada</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/regras.js"></script>
+<script>
+const socket = io();
+let myPlayer = -1;
+let myRoomCode = '';
+let st = null;          // último 'estado' do server
+let fim = 0;            // Date.now() em que o relógio zera (só quando ele está andando)
+let faseAnterior = null;
+let ultimoTick = -1;
+
+// --- SESSÃO (sobrevive ao F5): a identidade na sala é o token do server ---
+const SESSAO_KEY = 'tapple:sessao';
+function salvarSessao(code, token) { try { localStorage.setItem(SESSAO_KEY, JSON.stringify({ code, token })); } catch (e) {} }
+function lerSessao() { try { return JSON.parse(localStorage.getItem(SESSAO_KEY) || 'null'); } catch (e) { return null; } }
+function limparSessao() { try { localStorage.removeItem(SESSAO_KEY); } catch (e) {} }
+function salaDaURL() { return (new URLSearchParams(location.search).get('sala') || '').toUpperCase().trim(); }
+function linkDaSala() { return location.origin + '/?sala=' + myRoomCode; }
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('active', s.id === id));
+}
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+// --- SOM (oscilador, sem arquivo): tique nos últimos 3 s, buzina no estouro, clique na tecla ---
+let ac = null;
+function acordarAudio() {
+  try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) {}
+}
+document.addEventListener('pointerdown', acordarAudio, { once: true });
+function som(freq, dur, tipo = 'square', vol = 0.07) {
+  if (!ac) return;
+  try {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = tipo; o.frequency.value = freq; g.gain.value = vol;
+    o.connect(g).connect(ac.destination);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + dur);
+    o.stop(ac.currentTime + dur);
+  } catch (e) {}
+}
+let interagiu = false;
+document.addEventListener('pointerdown', () => { interagiu = true; }, { once: true });
+const vibra = (p) => { try { interagiu && navigator.vibrate && navigator.vibrate(p); } catch (e) {} };
+
+// --- ROLETA: 23 teclas em volta do botão amarelo, letra sempre em pé pra ler no celular ---
+// (No Tapple de mesa a letra aponta pra fora; em pé lê melhor sem girar o aparelho.)
+const CX = 200, CY = 200, R_TECLA = 151;
+function buildWheel() {
+  const svg = document.getElementById('svg');
+  const n = LETRAS.length;
+  let s = `
+    <defs>
+      <radialGradient id="base" cx="38%" cy="32%" r="75%">
+        <stop offset="0" stop-color="#F0604E"/><stop offset=".5" stop-color="#D42A2A"/><stop offset="1" stop-color="#8F1818"/>
+      </radialGradient>
+      <radialGradient id="hub" cx="40%" cy="35%" r="70%">
+        <stop offset="0" stop-color="#FFE271"/><stop offset=".65" stop-color="#F8C81C"/><stop offset="1" stop-color="#D89F00"/>
+      </radialGradient>
+      <filter id="sombra" x="-30%" y="-30%" width="160%" height="160%">
+        <feDropShadow dx="0" dy="2.5" stdDeviation="1.2" flood-color="#3A0A0A" flood-opacity=".7"/>
+      </filter>
+    </defs>
+    <circle cx="${CX}" cy="${CY}" r="198" fill="#5E0E0E"/>
+    <circle cx="${CX}" cy="${CY}" r="192" fill="url(#base)"/>
+    <circle cx="${CX}" cy="${CY}" r="124" fill="none" stroke="#7A1414" stroke-width="2" opacity=".6"/>
+    <g class="teclas">`;
+  LETRAS.forEach((l, i) => {
+    const a = -90 + (i * 360) / n;
+    const rad = (a * Math.PI) / 180;
+    const x = CX + R_TECLA * Math.cos(rad), y = CY + R_TECLA * Math.sin(rad);
+    s += `<g class="tecla" data-l="${l}" onclick="tocarLetra('${l}')">
+      <circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="22" fill="transparent"/>
+      <g transform="translate(${x.toFixed(2)} ${y.toFixed(2)}) rotate(${(a + 90).toFixed(2)})"><rect x="-15" y="-23" width="30" height="46" rx="7"/></g>
+      <text x="${x.toFixed(2)}" y="${y.toFixed(2)}">${l}</text></g>`;
+  });
+  s += `</g>
+    <circle cx="${CX}" cy="${CY}" r="118" fill="none" stroke="#6B1010" stroke-width="9"/>
+    <circle id="arco" cx="${CX}" cy="${CY}" r="118" fill="none" stroke="#F4EEDF" stroke-width="9" stroke-linecap="round"
+      transform="rotate(-90 ${CX} ${CY})" stroke-dasharray="${(2 * Math.PI * 118).toFixed(1)}" stroke-dashoffset="0"/>
+    <circle cx="${CX}" cy="${CY}" r="104" fill="#D89F00"/>
+    <circle cx="${CX}" cy="${CY}" r="98" fill="url(#hub)"/>`;
+  svg.innerHTML = s;
+}
+buildWheel();
+
+function tocarLetra(l) {
+  if (!st || st.phase !== 'playing' || st.round.turn !== myPlayer) return;
+  if (st.round.usadas.includes(l)) return;
+  if (!st.opponentOnline) return showToast('Adversário caiu, relógio parado.');
+  som(660, 0.06, 'square', 0.05);
+  socket.emit('letra', l);
+}
+
+// --- RENDER: tudo sai do 'estado' do server ---
+function render() {
+  if (!st) return;
+  const r = st.round;
+  const eu = myPlayer, ele = 1 - myPlayer;
+  document.getElementById('ptsEu').textContent = st.scores[eu];
+  document.getElementById('ptsEle').textContent = st.scores[ele];
+  document.getElementById('rodadaN').textContent = r.n;
+  document.getElementById('salaAtual').textContent = st.code;
+  document.getElementById('cat').textContent = r.categoria;
+  document.getElementById('aviso').classList.toggle('show', !st.opponentOnline && st.phase === 'playing');
+
+  const minhaVez = st.phase === 'playing' && r.turn === eu;
+  document.getElementById('roleta').classList.toggle('minha-vez', minhaVez && st.opponentOnline);
+  document.getElementById('ladoEu').classList.toggle('na-vez', st.phase === 'playing' && r.turn === eu);
+  document.getElementById('ladoEle').classList.toggle('na-vez', st.phase === 'playing' && r.turn === ele);
+
+  document.querySelectorAll('.tecla').forEach((t) => {
+    const l = t.dataset.l;
+    t.classList.toggle('usada', r.usadas.includes(l));
+    t.classList.toggle('ultima', r.ultima === l);
+  });
+
+  const msg = document.getElementById('msg');
+  msg.classList.toggle('vez', minhaVez);
+  if (st.phase === 'playing') {
+    msg.textContent = minhaVez
+      ? 'Sua vez: fale a palavra e toque a letra'
+      : 'Vez do adversário. Escute a palavra dele.';
+  } else msg.textContent = '';
+
+  // Relógio: o server manda quanto falta; daqui pra frente é só desenhar.
+  document.getElementById('parado').hidden = !(st.phase === 'playing' && st.relogioParado);
+  fim = st.relogioParado ? 0 : Date.now() + st.msLeft;
+  desenharRelogio(st.msLeft);
+
+  // Vez chegou em mim: vibra e avisa
+  if (minhaVez && st.opponentOnline && faseAnterior !== 'minha') { vibra(60); som(880, 0.08, 'sine', 0.06); }
+  faseAnterior = minhaVez ? 'minha' : st.phase;
+
+  // Cartas de fim de rodada e de partida
+  const ov = document.getElementById('overlay');
+  const T = document.getElementById('cartaT'), S = document.getElementById('cartaS'), B = document.getElementById('cartaBtn');
+  if (st.phase === 'round_over') {
+    if (r.motivo === 'roleta') { T.textContent = 'Roleta inteira!'; S.textContent = 'As 23 letras foram usadas. Ninguém pontua nesta rodada.'; }
+    else if (r.winner === eu) { T.textContent = 'Ponto seu!'; S.textContent = `O adversário não respondeu a tempo em "${r.categoria}".`; }
+    else { T.textContent = 'Tempo esgotado'; S.textContent = `Você não respondeu a tempo em "${r.categoria}". Ponto do adversário.`; }
+    B.textContent = 'Próxima rodada';
+    ov.classList.add('show');
+  } else if (st.phase === 'finished') {
+    const venci = st.winner === eu;
+    T.textContent = venci ? 'Você venceu!' : 'Você perdeu';
+    S.textContent = `Placar final ${st.scores[eu]} × ${st.scores[ele]}. Primeiro a ${PONTOS_VITORIA} pontos leva.`;
+    B.textContent = 'Revanche';
+    ov.classList.add('show');
+  } else ov.classList.remove('show');
+}
+
+function cartaAcao() {
+  if (!st) return;
+  if (st.phase === 'round_over') socket.emit('proxima');
+  if (st.phase === 'finished') socket.emit('rematch');
+}
+
+// --- RELÓGIO NA TELA ---
+const CIRC = 2 * Math.PI * 118;
+function desenharRelogio(ms) {
+  const frac = Math.max(0, Math.min(1, ms / TEMPO_MS));
+  document.getElementById('arco').setAttribute('stroke-dashoffset', (CIRC * (1 - frac)).toFixed(1));
+  const seg = document.getElementById('seg');
+  const s = Math.ceil(ms / 1000);
+  seg.textContent = s;
+  seg.classList.toggle('urgente', st && st.phase === 'playing' && s <= 3 && !st.relogioParado);
+}
+function loop() {
+  if (st && st.phase === 'playing' && fim) {
+    const ms = Math.max(0, fim - Date.now());
+    desenharRelogio(ms);
+    const s = Math.ceil(ms / 1000);
+    if (s !== ultimoTick) {
+      ultimoTick = s;
+      if (s > 0 && s <= 3) som(s === 1 ? 520 : 440, 0.05, 'square', 0.05);
+      if (s === 0) { som(180, 0.6, 'sawtooth', 0.09); vibra([120, 60, 120]); }
+    }
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// --- LOBBY ---
+function createRoom() { socket.emit('create_room'); }
+function joinRoom() {
+  const code = document.getElementById('codeInput').value.trim();
+  if (code.length !== 4) return showToast('Código tem 4 letras');
+  socket.emit('join_room', code);
+}
+function shareCode() {
+  const url = linkDaSala();
+  if (navigator.share) {
+    navigator.share({ title: 'Tapple Online', text: `Entre na sala ${myRoomCode}`, url }).catch(() => {});
+  } else {
+    navigator.clipboard.writeText(url).then(() => showToast('Link copiado!'), () => showToast(url));
+  }
+}
+function sair() {
+  limparSessao();
+  socket.disconnect();
+  location.href = location.pathname;
+}
+
+// --- SOCKET ---
+socket.on('room_created', ({ code, playerIndex, token }) => {
+  myPlayer = playerIndex; myRoomCode = code; salvarSessao(code, token);
+  document.getElementById('roomCodeDisplay').textContent = code;
+  showScreen('waiting');
+});
+socket.on('room_joined', ({ code, playerIndex, token }) => {
+  myPlayer = playerIndex; myRoomCode = code; salvarSessao(code, token);
+});
+socket.on('estado', (s) => {
+  st = s; myPlayer = s.playerIndex; myRoomCode = s.code;
+  if (s.phase === 'waiting') { document.getElementById('roomCodeDisplay').textContent = s.code; return showScreen('waiting'); }
+  showScreen('game');
+  render();
+});
+// Toda conexão (primeira, F5, reconexão do socket.io) tenta voltar pra sala guardada.
+// Link de convite ganha da sessão velha quando aponta pra outra sala.
+socket.on('connect', () => {
+  const alvo = salaDaURL();
+  const sessao = lerSessao();
+  if (sessao && sessao.token && (!alvo || alvo === sessao.code)) return socket.emit('rejoin', sessao);
+  if (alvo) { limparSessao(); socket.emit('join_room', alvo); }
+});
+socket.on('rejoined', (s) => {
+  st = s; myPlayer = s.playerIndex; myRoomCode = s.code;
+  faseAnterior = null;
+  if (s.phase === 'waiting') { document.getElementById('roomCodeDisplay').textContent = s.code; return showScreen('waiting'); }
+  showScreen('game');
+  render();
+});
+socket.on('rejoin_failed', (msg) => {
+  limparSessao();
+  const alvo = salaDaURL();
+  if (alvo) return socket.emit('join_room', alvo);
+  showToast(msg);
+  showScreen('lobby');
+});
+socket.on('error_msg', (msg) => {
+  showToast(msg);
+  if (/não encontrada|cheia/.test(msg) && salaDaURL()) history.replaceState(null, '', location.pathname);
+});
+document.getElementById('codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
+</script>
+</body>
+</html>
