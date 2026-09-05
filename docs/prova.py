@@ -1,8 +1,9 @@
 # Prova a 390px: dois celulares, criar/entrar, letra, estouro, F5 no meio, revanche.
 import sys, time, json
 from playwright.sync_api import sync_playwright
-PORTA_CDP = int(sys.argv[1]); URL = 'http://127.0.0.1:3100'
-OUT = 'docs/shots'
+PORTA_CDP = int(sys.argv[1]); URL = sys.argv[2] if len(sys.argv) > 2 else 'http://127.0.0.1:3100'
+OUT = sys.argv[3] if len(sys.argv) > 3 else 'docs/shots'
+TEMPO = 12 if 'onrender' in URL else 4  # produção tem 10 s de relógio
 with sync_playwright() as p:
     b = p.chromium.connect_over_cdp(f'http://127.0.0.1:{PORTA_CDP}')
     # Um contexto por celular: localStorage separado, senão o 2º senta na cadeira do 1º pelo token.
@@ -31,7 +32,7 @@ with sync_playwright() as p:
     assert 'minha-vez' in c.get_attribute('#roleta', 'class')
     c.screenshot(path=f'{OUT}/05-c-apos-f5.png')
     # Deixa estourar (TEMPO_MS local = 1 s)
-    a.wait_for_selector('#overlay.show', timeout=4000); c.wait_for_selector('#overlay.show')
+    a.wait_for_selector('#overlay.show', timeout=TEMPO*1000); c.wait_for_selector('#overlay.show')
     assert a.inner_text('#ptsEu') == '1' and c.inner_text('#ptsEle') == '1'
     a.screenshot(path=f'{OUT}/06-a-ponto-seu.png'); c.screenshot(path=f'{OUT}/06-c-tempo-esgotado.png')
     c.click('#cartaBtn'); a.wait_for_timeout(400)
@@ -43,7 +44,7 @@ with sync_playwright() as p:
             if 'minha-vez' in a.get_attribute('#roleta', 'class'):
                 livre = a.query_selector('.tecla:not(.usada)').get_attribute('data-l'); a.click(f'.tecla[data-l="{livre}"]'); a.wait_for_timeout(250)
             else: break
-        a.wait_for_selector('#overlay.show', timeout=4000); a.wait_for_timeout(200)
+        a.wait_for_selector('#overlay.show', timeout=TEMPO*1000); a.wait_for_timeout(200)
         if a.inner_text('#cartaBtn') == 'Revanche': break
         a.click('#cartaBtn'); a.wait_for_timeout(400)
     a.screenshot(path=f'{OUT}/07-a-venceu.png'); c.screenshot(path=f'{OUT}/07-c-perdeu.png')
